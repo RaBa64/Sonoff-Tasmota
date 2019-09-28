@@ -185,6 +185,16 @@ void CommandHandler(char* topic, uint8_t* data, uint32_t data_len)
     XdrvMailbox.topic = type;
     XdrvMailbox.data = dataBuf;
 
+#ifdef USE_SCRIPT_SUB_COMMAND
+  // allow overwrite tasmota cmds
+    if (!XdrvCall(FUNC_COMMAND)) {
+      if (!DecodeCommand(kTasmotaCommands, TasmotaCommand)) {
+        if (!XsnsCall(FUNC_COMMAND)) {
+            type = nullptr;  // Unknown command
+        }
+      }
+    }
+#else
     if (!DecodeCommand(kTasmotaCommands, TasmotaCommand)) {
       if (!XdrvCall(FUNC_COMMAND)) {
         if (!XsnsCall(FUNC_COMMAND)) {
@@ -192,6 +202,8 @@ void CommandHandler(char* topic, uint8_t* data, uint32_t data_len)
         }
       }
     }
+#endif
+
   }
 
   if (type == nullptr) {
@@ -215,10 +227,17 @@ void CommandHandler(char* topic, uint8_t* data, uint32_t data_len)
 void CmndBacklog(void)
 {
   if (XdrvMailbox.data_len) {
+
+#ifdef SUPPORT_IF_STATEMENT
+    char *blcommand = strtok(XdrvMailbox.data, ";");
+    while ((blcommand != nullptr) && (backlog.size() < MAX_BACKLOG))
+#else
     uint32_t bl_pointer = (!backlog_pointer) ? MAX_BACKLOG -1 : backlog_pointer;
     bl_pointer--;
     char *blcommand = strtok(XdrvMailbox.data, ";");
-    while ((blcommand != nullptr) && (backlog_index != bl_pointer)) {
+    while ((blcommand != nullptr) && (backlog_index != bl_pointer))
+#endif
+    {
       while(true) {
         blcommand = Trim(blcommand);
         if (!strncasecmp_P(blcommand, PSTR(D_CMND_BACKLOG), strlen(D_CMND_BACKLOG))) {
@@ -228,17 +247,27 @@ void CmndBacklog(void)
         }
       }
       if (*blcommand != '\0') {
+#ifdef SUPPORT_IF_STATEMENT
+        if (backlog.size() < MAX_BACKLOG) {
+          backlog.add(blcommand);
+        }
+#else
         backlog[backlog_index] = String(blcommand);
         backlog_index++;
         if (backlog_index >= MAX_BACKLOG) backlog_index = 0;
+#endif
       }
       blcommand = strtok(nullptr, ";");
     }
 //    ResponseCmndChar(D_JSON_APPENDED);
     mqtt_data[0] = '\0';
   } else {
-    bool blflag = (backlog_pointer == backlog_index);
+    bool blflag = BACKLOG_EMPTY;
+#ifdef SUPPORT_IF_STATEMENT
+    backlog.clear();
+#else
     backlog_pointer = backlog_index;
+#endif
     ResponseCmndChar(blflag ? D_JSON_EMPTY : D_JSON_ABORTED);
   }
 }
@@ -257,9 +286,18 @@ void CmndDelay(void)
 void CmndPower(void)
 {
   if ((XdrvMailbox.index > 0) && (XdrvMailbox.index <= devices_present)) {
-    if ((XdrvMailbox.payload < 0) || (XdrvMailbox.payload > 4)) { XdrvMailbox.payload = 9; }
-//      Settings.flag.device_index_enable = user_index;
+    if ((XdrvMailbox.payload < POWER_OFF) || (XdrvMailbox.payload > POWER_BLINK_STOP)) {
+      XdrvMailbox.payload = POWER_SHOW_STATE;
+    }
+//      Settings.flag.device_index_enable = XdrvMailbox.usridx;
     ExecuteCommandPower(XdrvMailbox.index, XdrvMailbox.payload, SRC_IGNORE);
+    mqtt_data[0] = '\0';
+  }
+  else if (0 == XdrvMailbox.index) {
+    if ((XdrvMailbox.payload < POWER_OFF) || (XdrvMailbox.payload > POWER_TOGGLE)) {
+      XdrvMailbox.payload = POWER_SHOW_STATE;
+    }
+    SetAllPower(XdrvMailbox.payload, SRC_IGNORE);
     mqtt_data[0] = '\0';
   }
 }
@@ -340,7 +378,7 @@ void CmndStatus(void)
     XsnsDriverState();
     ResponseAppend_P(PSTR(",\"Sensors\":"));
     XsnsSensorState();
-    ResponseAppend_P(PSTR("}}"));
+    ResponseJsonEndEnd();
     MqttPublishPrefixTopic_P(option, PSTR(D_CMND_STATUS "4"));
   }
 
@@ -607,26 +645,23 @@ void CmndSetoption(void)
 #endif  // USE_HOME_ASSISTANT
         }
       }
-      else if (1 == ptype) {   // SetOption50 .. 81
+      else if (1 == ptype) {     // SetOption50 .. 81
         if (XdrvMailbox.payload <= 1) {
           bitWrite(Settings.flag3.data, pindex, XdrvMailbox.payload);
-          if (5 == pindex) {   // SetOption55
+          if (5 == pindex) {     // SetOption55
             if (0 == XdrvMailbox.payload) {
               restart_flag = 2;  // Disable mDNS needs restart
             }
           }
-          if (10 == pindex) {  // SetOption60 enable or disable traditional sleep
+          if (10 == pindex) {    // SetOption60 enable or disable traditional sleep
             WiFiSetSleepMode();  // Update WiFi sleep mode accordingly
           }
-          if (18 == pindex) { // SetOption68 for multi-channel PWM, requires a reboot
-            restart_flag = 2;
-          }
-          if (15 == pindex) { // SetOption65 for tuya_disable_dimmer requires a reboot
+          if (18 == pindex) {    // SetOption68 for multi-channel PWM, requires a reboot
             restart_flag = 2;
           }
         }
       }
-      else {                   // SetOption32 .. 49
+      else {                     // SetOption32 .. 49
         uint32_t param_low = 0;
         uint32_t param_high = 255;
         switch (pindex) {
@@ -634,9 +669,6 @@ void CmndSetoption(void)
           case P_MAX_POWER_RETRY:
             param_low = 1;
             param_high = 250;
-            break;
-          case P_TUYA_RELAYS:
-            param_high = 8;
             break;
         }
         if ((XdrvMailbox.payload >= param_low) && (XdrvMailbox.payload <= param_high)) {
@@ -647,13 +679,13 @@ void CmndSetoption(void)
               LightUpdateColorMapping();
               break;
 #endif
-#if defined(USE_IR_REMOTE) && defined(USE_IR_RECEIVE)
+#if (defined(USE_IR_REMOTE) && defined(USE_IR_RECEIVE)) || defined(USE_IR_REMOTE_FULL)
             case P_IR_UNKNOW_THRESHOLD:
               IrReceiveUpdateThreshold();
               break;
 #endif
-#ifdef USE_TUYA_DIMMER
-            case P_TUYA_RELAYS:
+#ifdef USE_TUYA_MCU
+            case P_TUYA_DIMMER_MAX:
               restart_flag = 2;  // Need a restart to update GUI
               break;
 #endif
@@ -775,14 +807,14 @@ void CmndModules(void)
   for (uint32_t i = 0; i <= sizeof(kModuleNiceList); i++) {
     if (i > 0) { midx = pgm_read_byte(kModuleNiceList + i -1); }
     if (!jsflg) {
-      Response_P(PSTR("{\"" D_CMND_MODULES "%d\":["), lines);
+      Response_P(PSTR("{\"" D_CMND_MODULES "%d\":{"), lines);
     } else {
       ResponseAppend_P(PSTR(","));
     }
     jsflg = true;
     uint32_t j = i ? midx +1 : 0;
-    if ((ResponseAppend_P(PSTR("\"%d (%s)\""), j, AnyModuleName(midx).c_str()) > (LOGSZ - TOPSZ)) || (i == sizeof(kModuleNiceList))) {
-      ResponseAppend_P(PSTR("]}"));
+    if ((ResponseAppend_P(PSTR("\"%d\":\"%s\""), j, AnyModuleName(midx).c_str()) > (LOGSZ - TOPSZ)) || (i == sizeof(kModuleNiceList))) {
+      ResponseJsonEndEnd();
       MqttPublishPrefixTopic_P(RESULT_OR_STAT, UpperCase(XdrvMailbox.command, XdrvMailbox.command));
       jsflg = false;
       lines++;
@@ -819,7 +851,7 @@ void CmndGpio(void)
         if (jsflg) { ResponseAppend_P(PSTR(",")); }
         jsflg = true;
         char stemp1[TOPSZ];
-        ResponseAppend_P(PSTR("\"" D_CMND_GPIO "%d\":\"%d (%s)\""), i, Settings.my_gp.io[i], GetTextIndexed(stemp1, sizeof(stemp1), Settings.my_gp.io[i], kSensorNames));
+        ResponseAppend_P(PSTR("\"" D_CMND_GPIO "%d\":{\"%d\":\"%s\"}"), i, Settings.my_gp.io[i], GetTextIndexed(stemp1, sizeof(stemp1), Settings.my_gp.io[i], kSensorNames));
       }
     }
     if (jsflg) {
@@ -839,20 +871,19 @@ void CmndGpios(void)
   bool jsflg = false;
   for (uint32_t i = 0; i < sizeof(kGpioNiceList); i++) {
     midx = pgm_read_byte(kGpioNiceList + i);
-    if (!GetUsedInModule(midx, cmodule.io)) {
-      if (!jsflg) {
-        Response_P(PSTR("{\"" D_CMND_GPIOS "%d\":["), lines);
-      } else {
-        ResponseAppend_P(PSTR(","));
-      }
-      jsflg = true;
-      char stemp1[TOPSZ];
-      if ((ResponseAppend_P(PSTR("\"%d (%s)\""), midx, GetTextIndexed(stemp1, sizeof(stemp1), midx, kSensorNames)) > (LOGSZ - TOPSZ)) || (i == sizeof(kGpioNiceList) -1)) {
-        ResponseAppend_P(PSTR("]}"));
-        MqttPublishPrefixTopic_P(RESULT_OR_STAT, UpperCase(XdrvMailbox.command, XdrvMailbox.command));
-        jsflg = false;
-        lines++;
-      }
+    if ((XdrvMailbox.payload != 255) && GetUsedInModule(midx, cmodule.io)) { continue; }
+    if (!jsflg) {
+      Response_P(PSTR("{\"" D_CMND_GPIOS "%d\":{"), lines);
+    } else {
+      ResponseAppend_P(PSTR(","));
+    }
+    jsflg = true;
+    char stemp1[TOPSZ];
+    if ((ResponseAppend_P(PSTR("\"%d\":\"%s\""), midx, GetTextIndexed(stemp1, sizeof(stemp1), midx, kSensorNames)) > (LOGSZ - TOPSZ)) || (i == sizeof(kGpioNiceList) -1)) {
+      ResponseJsonEndEnd();
+      MqttPublishPrefixTopic_P(RESULT_OR_STAT, UpperCase(XdrvMailbox.command, XdrvMailbox.command));
+      jsflg = false;
+      lines++;
     }
   }
   mqtt_data[0] = '\0';
@@ -957,12 +988,12 @@ void CmndSwitchDebounce(void)
 
 void CmndBaudrate(void)
 {
-  if (XdrvMailbox.payload > 1200) {
-    XdrvMailbox.payload /= 1200;  // Make it a valid baudrate
-    baudrate = XdrvMailbox.payload * 1200;
+  if (XdrvMailbox.payload >= 300) {
+    XdrvMailbox.payload /= 300;  // Make it a valid baudrate
+    baudrate = (XdrvMailbox.payload & 0xFFFF) * 300;
     SetSerialBaudrate(baudrate);
   }
-  ResponseCmndNumber(Settings.baudrate * 1200);
+  ResponseCmndNumber(Settings.baudrate * 300);
 }
 
 void CmndSerialSend(void)
@@ -1256,6 +1287,10 @@ void CmndReset(void)
     restart_flag = 210 + XdrvMailbox.payload;
     Response_P(PSTR("{\"" D_CMND_RESET "\":\"" D_JSON_ERASE ", " D_JSON_RESET_AND_RESTARTING "\"}"));
     break;
+  case 99:
+    Settings.bootcount = 0;
+    ResponseCmndDone();
+    break;
   default:
     ResponseCmndChar(D_JSON_ONE_TO_RESET);
   }
@@ -1263,10 +1298,25 @@ void CmndReset(void)
 
 void CmndTime(void)
 {
+// payload 0 = (re-)enable NTP
+// payload 1 = Time format {"Time":"2019-09-04T14:31:29"}
+// payload 2 = Time format {"Time":"2019-09-04T14:31:29","Epoch":1567600289}
+// payload 3 = Time format {"Time":1567600289}
+// payload 4 = reserved
+// payload 1451602800 - disable NTP and set time to epoch
+
+  uint32_t format = Settings.flag2.time_format;
   if (XdrvMailbox.data_len > 0) {
-    RtcSetTime(XdrvMailbox.payload);
+    if ((XdrvMailbox.payload > 0) && (XdrvMailbox.payload < 4)) {
+      Settings.flag2.time_format = XdrvMailbox.payload -1;
+      format = Settings.flag2.time_format;
+    } else {
+      format = 1;  // {"Time":"2019-09-04T14:31:29","Epoch":1567600289}
+      RtcSetTime(XdrvMailbox.payload);
+    }
   }
-  ResponseBeginTime();
+  mqtt_data[0] = '\0';
+  ResponseAppendTimeFormat(format);
   ResponseJsonEnd();
 }
 

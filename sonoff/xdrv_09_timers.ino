@@ -296,7 +296,7 @@ void TimerEverySecond(void)
             if (xtimer.days & days) {
               Settings.timer[i].arm = xtimer.repeat;
 #if defined(USE_RULES) || defined(USE_SCRIPT)
-              if (3 == xtimer.power) {                       // Blink becomes Rule disregarding device and allowing use of Backlog commands
+              if (POWER_BLINK == xtimer.power) {             // Blink becomes Rule disregarding device and allowing use of Backlog commands
                 Response_P(PSTR("{\"Clock\":{\"Timer\":%d}}"), i +1);
                 XdrvRulesProcess();
               } else
@@ -482,7 +482,7 @@ void CmndTimers(void)
     jsflg++;
     PrepShowTimer(i +1);
     if (jsflg > 3) {
-      ResponseAppend_P(PSTR("}}"));
+      ResponseJsonEndEnd();
       MqttPublishPrefixTopic_P(RESULT_OR_STAT, PSTR(D_CMND_TIMERS));
       jsflg = 0;
     }

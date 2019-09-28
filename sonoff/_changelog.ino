@@ -1,7 +1,65 @@
 /*********************************************************************************************\
+ * 6.6.0.14 20190925
+ * Change command Tariffx to allow time entries like 23 (hours), 1320 (minutes) or 23:00. NOTE: As this is development branch previous tariffs are lost! (#6488)
+ * Remove support for define USE_DS18x20_LEGACY and legacy DS18x20 driver (#6486)
+ * Add initial support for MQTT logging using command MqttLog <loglevel> (#6498)
+ *
+ * 6.6.0.13 20190922
+ * Add command EnergyReset4 x,x to initialize total usage for two tarrifs
+ * Add command EnergyReset5 x,x to initialize total export (or production) for two tarrifs
+ * Add command Sensor34 8,0 and Sensor34 8,1 to disable/enable JSON message on weight change over 4 gram
+ * Add JSON array index support to rules evaluation allowing trigger on ENERGY#POWER[2]>0.60 from JSON ..,"Power":[0.00,0.68],.. (#6160)
+ *
+ * 6.6.0.12 20190910
+ * Redesign command Tariff to now default to 0 (=disabled) and allowing to set both Standard Time (ST) and Daylight Savings Time (DST) start hour
+ *  Commands Tariff1 22,23 = Tariff1 (Off-Peak) ST,DST   Tariff2 (Standard) 6,7 = Tariff2 ST,DST   Tariff9 0/1 = Weekend toggle (1 = Off-Peak during weekend)
+ * Change rename "Data" to "Hash" and limit to 32 bits when receiving UNKNOWN IR protocol (see DECODE_HASH from IRremoteESP8266)
+ * Add command Gpios 255/All to show all available GPIO components (#6407)
+ * Change JSON output format for commands Adc, Adcs, Modules, Gpio and Gpios from list to dictionary (#6407)
+ * Add Zigbee support phase 3 - support for Xiaomi lumi.weather air quality sensor, Osram mini-switch
+ * Change energy sensors for three phase/channel support
+ * Add support for Shelly 2.5 dual energy (#6160)
+ * Add initial support for up to three PZEM-014/-016 on serial modbus connection with addresses 1 (default), 2 and 3 (#2315)
+ * Add initial support for up to three PZEM-004T on serial connection with addresses x.x.x.1 (default), 2 and 3 (#2315)
+ * Add initial support for up to three PZEM-003/-017 on serial modbus connection with addresses 1 (default), 2 and 3 (#2315)
+ * Add driver USE_SDM630_2 as future replacement for USE_SDM630 - Pls test and report
+ * Add command ModuleAddress 1/2/3 to set Pzem module address when a single module is connected (#2315)
+ *
+ * 6.6.0.11 20190907
+ * Change Settings crc calculation allowing short term backward compatibility
+ * Add support for up to 4 INA226 Voltage and Current sensors by Steve Rogers (#6342)
+ * Change Improve reliability of TasmotaSerial at 115200 bauds and reduce IRAM usage for Stage/pre-2.6
+ * Add support for A4988 stepper-motor-driver-circuit by Tim Leuschner (#6370)
+ * Add support for Hiking DDS238-2 Modbus energy meter by Matteo Campanella (#6384)
+ *
+ * 6.6.0.10 20190905
+ * Redesign Tuya support by Shantur Rathore (#6353)
+ * Add command Reset 99 to reset bootcount to zero (#684, #6351)
+ * Change command Time 1/2/3 to select JSON time format ISO, ISO + Epoch or Epoch for legacy reason
+ *
+ * 6.6.0.9 20190828
+ * Change theoretical baudrate range to 300..19660500 bps in 300 increments (#6294)
+ * Add Full support of all protocols in IRremoteESP8266, to be used on dedicated-IR Tasmota version. Warning: +81k Flash when compiling with USE_IR_REMOTE_FULL
+ * Add compile time define USE_WS2812_HARDWARE to select hardware type WS2812, WS2812X, WS2813, SK6812, LC8812 or APA106 (DMA mode only)
+ * Add 'sonoff-ir' pre-packaged IR-dedicated firmware and 'sonoff-ircustom' to customize firmware with IR Full protocol support
+ * Add Zigbee support phase 2 - cc2530 initialization and basic ZCL decoding
+ * Add driver USE_SDM120_2 with Domoticz P1 Smart Meter functionality as future replacement for USE_SDM120 - Pls test and report
+ * Add command Power0 0/1/2/Off/On/Toggle to control all power outputs at once (#6340)
+ * Add time to more events (#6337)
+ * Add command Time 1/2/3 to select JSON time format ISO + Epoch, ISO or Epoch
+ *
+ * 6.6.0.8 20190827
+ * Add Tuya Energy monitoring by Shantur Rathore
+ * Add phase 1 Domoticz P1 Smart Meter support using energy sensors handled by xdrv_03_energy.ino based on an idea by pablozg
+ *   Add commands Tariff1 0..23 (start Off-Peak hour), Tariff2 0..23 (start Standard hour) and Tariff3 0/1 (Saturday and Sunday Off-Peak)
+ *
+ * 6.6.0.7 20190825
+ * Expand Settings area to 4k for future use
+ *
  * 6.6.0.6 20190819
  * Add I2C display driver for SH1106 oled by Gerhard Mutz
  * Add SPI display drivers for epaper 4.2 inch, ILI9488 TFT, SSD1351 Color oled and RA8876 TFT by Gerhard Mutz
+ * Add support for HM17 bluetooth LE passive scan of ibeacon devices by Gerhard Mutz
  *
  * 6.6.0.5 20190816
  * Add command WebSensor<sensor number> 0/1 to control display of sensor data in web GUI (#6085)
